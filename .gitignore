@@ -1,0 +1,16 @@
+# 输出文件（不提交到 Git）
+output/*.xlsx
+output/*.xls
+
+# 输入文件（含敏感数据，不提交）
+input/*.xlsx
+input/*.xls
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 系统文件
+.DS_Store
+Thumbs.db
