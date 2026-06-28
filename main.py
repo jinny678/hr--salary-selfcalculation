@@ -321,6 +321,13 @@ def detect_anomalies(df, df_prev):
                 })
     return pd.DataFrame(records)
 
+def build_personal_summary(df):
+    """按员工个人汇总请款数据"""
+    cols = CONFIG['summary_columns']
+    personal = df[['员工ID', '姓名', '部门'] + cols].copy()
+    personal = personal.sort_values('部门')
+    return personal
+
 def build_dept_summary(df):
     """按部门汇总请款数据"""
     agg_map = {}
@@ -332,7 +339,7 @@ def build_dept_summary(df):
     summary = summary.sort_values('实发金额_合计', ascending=False)
     return summary
 
-def generate_report(df, ps_results, df_checks, df_tax, df_anomalies, taxable_mismatch, dept_summary, output_path):
+def generate_report(df, ps_results, df_checks, df_tax, df_anomalies, taxable_mismatch, personal_summary, dept_summary, output_path):
     """生成 Excel 报告"""
     wb = Workbook()
 
@@ -499,58 +506,91 @@ def generate_report(df, ps_results, df_checks, df_tax, df_anomalies, taxable_mis
     auto_width(ws5, len(h5))
     ws5.freeze_panes = 'A4'
 
-    # ---- Sheet 6: 请款汇总 ----
-    ws6 = wb.create_sheet('请款汇总')
-    ws6.merge_cells('A1:P1')
-    ws6.cell(row=1, column=1, value=f'{month_str} 请款汇总表（按部门）').font = TITLE_FONT
-    h6 = ['部门', '人数', '应发工资', '津贴福利', '应发合计2', '个人社保', '个人公积金', '个税', '扣款合计', '实发金额', '并入纳税', '高温津贴', '全勤津贴', '加班费', '中夜班', '扣缺勤']
+    # ---- Sheet 6: 请款汇总-个人 ----
+    ws6 = wb.create_sheet('请款汇总-个人')
+    ws6.merge_cells('A1:Q1')
+    ws6.cell(row=1, column=1, value=f'{month_str} 请款汇总表（按个人）').font = TITLE_FONT
+    h6 = ['员工ID', '姓名', '部门', '应发工资', '津贴福利', '应发合计2', '个人社保', '个人公积金', '个税', '扣款合计', '实发金额', '并入纳税', '高温津贴', '全勤津贴', '加班费', '中夜班', '扣缺勤']
     for c, h in enumerate(h6, 1):
         ws6.cell(row=3, column=c, value=h)
     style_header(ws6, 3, len(h6))
 
-    col_map_h6 = ['部门', '人数', '应发工资_合计', '津贴福利小计_合计', '应发合计2_合计',
+    col_map_h6 = ['员工ID', '姓名', '部门', '应发工资', '津贴福利小计', '应发合计2',
+                  '个人社保', '个人公积金', '个税', '扣款合计', '实发金额',
+                  '并入纳税', '高温津贴', '全勤津贴', '加班费', '中夜班津贴', '扣缺勤']
+    for i, (_, row) in enumerate(personal_summary.iterrows()):
+        r = 4 + i
+        for c, col_name in enumerate(col_map_h6, 1):
+            val = row[col_name] if col_name in row.index else 0
+            ws6.cell(row=r, column=c, value=round(val, 2) if isinstance(val, (int, float, np.floating)) else val)
+    style_data(ws6, 4, 3 + len(personal_summary), len(h6))
+
+    # Total row
+    tr_p = 4 + len(personal_summary)
+    total_label_cells = ['合计', '', '']
+    for c in range(1, len(h6) + 1):
+        if c <= 3:
+            total_val = total_label_cells[c - 1]
+        else:
+            col_name = col_map_h6[c - 1]
+            total_val = personal_summary[col_name].sum() if col_name in personal_summary.columns else 0
+        cell = ws6.cell(row=tr_p, column=c, value=round(total_val, 2) if isinstance(total_val, (int, float, np.floating)) else total_val)
+        cell.font = BOLD; cell.border = THIN_BORDER; cell.fill = LIGHT_BLUE; cell.alignment = CENTER
+    auto_width(ws6, len(h6), 20)
+    ws6.freeze_panes = 'A4'
+
+    # ---- Sheet 7: 请款汇总-部门 ----
+    ws7 = wb.create_sheet('请款汇总-部门')
+    ws7.merge_cells('A1:P1')
+    ws7.cell(row=1, column=1, value=f'{month_str} 请款汇总表（按部门）').font = TITLE_FONT
+    h7 = ['部门', '人数', '应发工资', '津贴福利', '应发合计2', '个人社保', '个人公积金', '个税', '扣款合计', '实发金额', '并入纳税', '高温津贴', '全勤津贴', '加班费', '中夜班', '扣缺勤']
+    for c, h in enumerate(h7, 1):
+        ws7.cell(row=3, column=c, value=h)
+    style_header(ws7, 3, len(h7))
+
+    col_map_h7 = ['部门', '人数', '应发工资_合计', '津贴福利小计_合计', '应发合计2_合计',
                   '个人社保_合计', '个人公积金_合计', '个税_合计', '扣款合计_合计',
                   '实发金额_合计', '并入纳税_合计', '高温津贴_合计', '全勤津贴_合计',
                   '加班费_合计', '中夜班津贴_合计', '扣缺勤_合计']
     for i, (_, row) in enumerate(dept_summary.iterrows()):
         r = 4 + i
-        for c, col_name in enumerate(col_map_h6, 1):
+        for c, col_name in enumerate(col_map_h7, 1):
             val = row[col_name] if col_name in row.index else 0
-            ws6.cell(row=r, column=c, value=round(val, 2) if isinstance(val, (int, float, np.floating)) else val)
-    style_data(ws6, 4, 3 + len(dept_summary), len(h6))
+            ws7.cell(row=r, column=c, value=round(val, 2) if isinstance(val, (int, float, np.floating)) else val)
+    style_data(ws7, 4, 3 + len(dept_summary), len(h7))
 
     # Total row
-    tr = 4 + len(dept_summary)
-    for c, col_name in enumerate(col_map_h6, 1):
+    tr_d = 4 + len(dept_summary)
+    for c, col_name in enumerate(col_map_h7, 1):
         total_val = dept_summary[col_name].sum() if col_name != '部门' else '合计'
-        cell = ws6.cell(row=tr, column=c, value=round(total_val, 2) if isinstance(total_val, (int, float, np.floating)) else total_val)
+        cell = ws7.cell(row=tr_d, column=c, value=round(total_val, 2) if isinstance(total_val, (int, float, np.floating)) else total_val)
         cell.font = BOLD; cell.border = THIN_BORDER; cell.fill = LIGHT_BLUE; cell.alignment = CENTER
-    auto_width(ws6, len(h6), 20)
-    ws6.freeze_panes = 'A4'
+    auto_width(ws7, len(h7), 20)
+    ws7.freeze_panes = 'A4'
 
-    # ---- Sheet 7: 特殊状态员工 ----
-    ws7 = wb.create_sheet('特殊状态员工')
-    ws7.merge_cells('A1:L1')
-    ws7.cell(row=1, column=1, value='全月病假/产假/残疾人 员工薪资明细').font = TITLE_FONT
+    # ---- Sheet 8: 特殊状态员工 ----
+    ws8 = wb.create_sheet('特殊状态员工')
+    ws8.merge_cells('A1:L1')
+    ws8.cell(row=1, column=1, value='全月病假/产假/残疾人 员工薪资明细').font = TITLE_FONT
     special = df[(df['全月病假']=='是') | (df['产假']=='是') | (df['残疾人']=='是')]
-    h7 = ['员工ID', '姓名', '部门', '人员状态', '资格等级', '全月病假', '产假', '残疾人', '基本工资', '应发工资', '扣缺勤', '实发金额']
-    for c, h in enumerate(h7, 1):
-        ws7.cell(row=3, column=c, value=h)
-    style_header(ws7, 3, len(h7))
+    h8 = ['员工ID', '姓名', '部门', '人员状态', '资格等级', '全月病假', '产假', '残疾人', '基本工资', '应发工资', '扣缺勤', '实发金额']
+    for c, h in enumerate(h8, 1):
+        ws8.cell(row=3, column=c, value=h)
+    style_header(ws8, 3, len(h8))
     for i, (_, row) in enumerate(special.iterrows()):
         r = 4 + i
-        for c, col_name in enumerate(h7, 1):
-            ws7.cell(row=r, column=c, value=row[col_name] if col_name in row.index else '')
+        for c, col_name in enumerate(h8, 1):
+            ws8.cell(row=r, column=c, value=row[col_name] if col_name in row.index else '')
         if row['全月病假'] == '是' or row['产假'] == '是':
-            for c in range(1, len(h7)+1):
-                ws7.cell(row=r, column=c).fill = YELLOW_FILL
-    style_data(ws7, 4, 3 + len(special), len(h7))
-    auto_width(ws7, len(h7))
+            for c in range(1, len(h8)+1):
+                ws8.cell(row=r, column=c).fill = YELLOW_FILL
+    style_data(ws8, 4, 3 + len(special), len(h8))
+    auto_width(ws8, len(h8))
 
-    # ---- Sheet 8: 工具说明 ----
-    ws8 = wb.create_sheet('工具说明')
-    ws8.merge_cells('A1:D1')
-    ws8.cell(row=1, column=1, value='薪酬计算交叉验证工具 - 验证逻辑说明').font = TITLE_FONT
+    # ---- Sheet 9: 工具说明 ----
+    ws9 = wb.create_sheet('工具说明')
+    ws9.merge_cells('A1:D1')
+    ws9.cell(row=1, column=1, value='薪酬计算交叉验证工具 - 验证逻辑说明').font = TITLE_FONT
     notes = [
         ['序号', '验证项', '验证方法', '说明'],
         ['1', 'PS内部一致性', '逐项验证分项之和是否等于总项', '已验证通过'],
@@ -559,15 +599,16 @@ def generate_report(df, ps_results, df_checks, df_tax, df_anomalies, taxable_mis
         ['4', '个税验算', '累计预扣法独立验算', '差异多为四舍五入'],
         ['5', '环比异常', '与上月对比变动率>10%且金额>阈值', '需人工复核确认'],
         ['6', '特殊状态', '标记全月病假/产假/残疾人', '关注其薪资计算是否正确'],
-        ['7', '请款汇总', '按部门汇总应发/扣款/实发等', '可直接用于ERP录入'],
+        ['7', '请款汇总-个人', '按员工个人汇总应发/扣款/实发等', '逐人明细可用于核对'],
+        ['8', '请款汇总-部门', '按部门汇总应发/扣款/实发等', '可直接用于ERP录入'],
     ]
     for r, row_data in enumerate(notes):
         for c, val in enumerate(row_data):
-            ws8.cell(row=3+r, column=c+1, value=val)
-    style_header(ws8, 3, 4)
-    style_data(ws8, 4, 3 + len(notes) - 1, 4)
-    auto_width(ws8, 4, 40)
-    ws8.column_dimensions['C'].width = 55
+            ws9.cell(row=3+r, column=c+1, value=val)
+    style_header(ws9, 3, 4)
+    style_data(ws9, 4, 3 + len(notes) - 1, 4)
+    auto_width(ws9, 4, 40)
+    ws9.column_dimensions['C'].width = 55
 
     wb.save(output_path)
     return output_path
@@ -618,6 +659,7 @@ def main():
     print(f"  环比异常: {len(df_anomalies)} 条")
 
     # 7. 请款汇总
+    personal_summary = build_personal_summary(df)
     dept_summary = build_dept_summary(df)
     total_real = dept_summary['实发金额_合计'].sum()
     print(f"  实发总额: {total_real:,.2f} 元")
@@ -627,7 +669,7 @@ def main():
     output_filename = f'薪酬验证报告_{month_label}.xlsx'
     output_path = os.path.join(os.path.dirname(__file__), 'output', output_filename)
     generate_report(df, ps_results, df_checks, df_tax, df_anomalies,
-                    ps_results['taxable_income_mismatch'], dept_summary, output_path)
+                    ps_results['taxable_income_mismatch'], personal_summary, dept_summary, output_path)
 
     # 9. 复制到历史存档
     history_dir = os.path.join(os.path.dirname(__file__), 'history')
